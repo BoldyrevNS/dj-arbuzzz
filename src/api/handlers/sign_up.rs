@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::State;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     AppState,
@@ -15,6 +16,15 @@ use crate::{
     },
 };
 
+pub fn sign_up_router(app_state: Arc<AppState>) -> OpenApiRouter {
+    OpenApiRouter::new()
+        .routes(routes!(start))
+        .routes(routes!(verify))
+        .routes(routes!(resend))
+        .routes(routes!(complete))
+        .with_state(app_state)
+}
+
 #[utoipa::path(
         post,
         path = "/start",
@@ -26,7 +36,7 @@ use crate::{
             (status = 500, description = "Internal Server Error")
         )
     )]
-pub async fn start(
+async fn start(
     State(state): State<Arc<AppState>>,
     ValidatedJSON(payload): ValidatedJSON<SignUpStartRequest>,
 ) -> ApiResult<SignUpStartResponse> {
@@ -49,7 +59,7 @@ pub async fn start(
             (status = 500, description = "Internal Server Error")
         )
     )]
-pub async fn verify(
+async fn verify(
     State(state): State<Arc<AppState>>,
     ValidatedJSON(payload): ValidatedJSON<VerifyOTPRequest>,
 ) -> ApiResult<()> {
@@ -68,7 +78,7 @@ pub async fn verify(
             (status = 500, description = "Internal Server Error")
         )
     )]
-pub async fn resend(
+async fn resend(
     State(state): State<Arc<AppState>>,
     ValidatedJSON(payload): ValidatedJSON<ResendOTPRequest>,
 ) -> ApiResult<ResendOTPResponse> {
@@ -82,12 +92,12 @@ pub async fn resend(
         tag = "Sign Up",
         request_body = SignUpCompleteRequest,
         responses(
-            (status = 200, description = "Sign up completed successfully"),
+            (status = 201, description = "Sign up completed successfully"),
             (status = 400, description = "Bad Request"),
             (status = 500, description = "Internal Server Error")
         )
     )]
-pub async fn complete(
+async fn complete(
     State(state): State<Arc<AppState>>,
     ValidatedJSON(payload): ValidatedJSON<SignUpCompleteRequest>,
 ) -> ApiResult<()> {
@@ -96,5 +106,5 @@ pub async fn complete(
         .sign_up_service
         .sign_up_complete(payload)
         .await?;
-    Ok(ApiResponse::OK(()))
+    Ok(ApiResponse::CREATED(()))
 }

@@ -12,12 +12,20 @@ pub struct HashData {
     pub email: String,
     pub otp: u32,
 }
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Claims {
+    email: String,
+    otp: String,
+    exp: u64,
+}
 pub struct OTPService {}
 
 impl OTPService {
     pub fn new() -> Self {
         OTPService {}
     }
+
     pub fn generate(&self, len: u32) -> AppResult<u32> {
         if len < 1 {
             return Err(AppError::Internal(anyhow::anyhow!(

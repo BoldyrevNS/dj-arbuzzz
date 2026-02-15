@@ -1,0 +1,24 @@
+CREATE TABLE tracks (
+  id SERIAL PRIMARY KEY,
+  track_id INT NOT NULL,
+  owner_id INT NOT NULL,
+  download_url VARCHAR NOT NULL,
+  title VARCHAR NOT NULL,
+  artist VARCHAR NOT NULL,
+  duration_sec INT DEFAULT 0,
+  likes_count INT DEFAULT 0
+);
+
+CREATE TABLE user_tracks (
+  id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users (id) ON DELETE CASCADE,
+  track_id INT REFERENCES tracks (id) ON DELETE CASCADE,
+  added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE user_likes (
+  id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users (id) ON DELETE CASCADE,
+  track_id INT REFERENCES tracks (id) ON DELETE CASCADE,
+  liked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

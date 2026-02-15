@@ -1,5 +1,6 @@
 mod database;
 mod redis;
+mod secret;
 mod smtp;
 
 #[derive(Clone, Debug)]
@@ -16,6 +17,7 @@ pub struct AppConfig {
     pub music_api_url: String,
     pub music_api_token: String,
     pub smtp_config: smtp::SMTPConfig,
+    pub secret_config: secret::SecretConfig,
 }
 
 impl AppConfig {
@@ -28,6 +30,7 @@ impl AppConfig {
             music_api_url: Self::get_music_api_url(),
             music_api_token: Self::get_music_api_token(),
             smtp_config: smtp::SMTPConfig::new(),
+            secret_config: secret::SecretConfig::new(),
         }
     }
 

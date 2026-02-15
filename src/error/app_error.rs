@@ -5,14 +5,21 @@ use diesel_async::pooled_connection::deadpool::PoolError;
 use redis::RedisError;
 use serde_json::json;
 use thiserror::Error;
+
+use crate::error;
 #[derive(Debug)]
 pub enum ErrorCode {
     Unknown,
     OTPResendFailed,
     WrongOTP,
     OTPExpired,
-    WrongOTPHash,
+    WrongOTPToken,
     UserAlreadyExists,
+    OTPNotVerified,
+    JWTExpired,
+    ResendOTPTooManyRequests,
+    SignUpFailed,
+    JWTInvalid,
 }
 
 #[derive(serde::Serialize)]
@@ -40,6 +47,9 @@ pub enum AppError {
 
     #[error("Internal server error: {0}")]
     Internal(#[from] anyhow::Error),
+
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String, Option<ErrorCode>),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -65,14 +75,20 @@ impl IntoResponse for AppError {
                 format!("Internal server error: {}", err),
                 None,
             ),
+            AppError::TooManyRequests(msg, code) => (StatusCode::TOO_MANY_REQUESTS, msg, code),
         };
         let code_number = match code {
             Some(ErrorCode::OTPResendFailed) => 1001,
             Some(ErrorCode::WrongOTP) => 1002,
-            Some(ErrorCode::WrongOTPHash) => 1003,
+            Some(ErrorCode::WrongOTPToken) => 1003,
             Some(ErrorCode::OTPExpired) => 1004,
             Some(ErrorCode::UserAlreadyExists) => 1101,
+            Some(ErrorCode::OTPNotVerified) => 1103,
             Some(ErrorCode::Unknown) => 1000,
+            Some(ErrorCode::JWTExpired) => 1005,
+            Some(ErrorCode::ResendOTPTooManyRequests) => 1006,
+            Some(ErrorCode::JWTInvalid) => 1007,
+            Some(ErrorCode::SignUpFailed) => 1102,
             None => 1000,
         };
         let body = Json(json!({
@@ -101,5 +117,11 @@ impl From<BuildError> for AppError {
 impl From<PoolError> for AppError {
     fn from(value: PoolError) -> Self {
         AppError::Internal(anyhow::anyhow!(value.to_string()))
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for AppError {
+    fn from(value: jsonwebtoken::errors::Error) -> Self {
+        AppError::Internal(anyhow::anyhow!("JWT error: {}", value))
     }
 }
