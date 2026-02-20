@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tower_cookies::CookieManagerLayer;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -15,5 +16,6 @@ pub fn create_router(state: AppState) -> Router {
         )
         .split_for_parts();
     let router = router.merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", api));
+    let router = router.layer(CookieManagerLayer::new());
     router
 }

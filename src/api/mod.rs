@@ -59,10 +59,7 @@ impl AppState {
             token_service.clone(),
         ));
 
-        let auth_service = Arc::new(AuthService::new(
-            token_service.clone(),
-            users_repository.clone(),
-        ));
+        let auth_service = Arc::new(AuthService::new(cache.clone(), users_repository.clone()));
 
         let services = Services {
             sign_up_service,

@@ -1,108 +1,57 @@
 use std::sync::Arc;
 
 use argon2::{Argon2, PasswordVerifier, password_hash};
-use jsonwebtoken::get_current_timestamp;
-use serde::{Deserialize, Serialize};
+use rand::distributions::Alphanumeric;
+use rand::{Rng, thread_rng};
+use redis::AsyncTypedCommands;
+use tower_cookies::{Cookie, Cookies};
+
+const COOKIE_LIFETIME_SEC: i64 = 60 * 60 * 24 * 7;
 
 use crate::{
-    dto::{
-        request::auth::auth::{RefreshTokenRequest, SignInRequest},
-        response::auth::auth::{RefreshTokenResponse, SignInResponse},
-    },
+    dto::request::auth::auth::SignInRequest,
     error::app_error::{AppError, AppResult, ErrorCode},
-    infrastucture::repositories::users_repository::UsersRepository,
-    service::token_service::{Token, TokenService, TokenType},
+    infrastucture::{cache::client::Cache, repositories::users_repository::UsersRepository},
 };
 
-const ACCESS_TOKEN_EXPIRATION: u64 = 60 * 60;
-const REFRESH_TOKEN_EXPIRATION: u64 = 60 * 60 * 24 * 7;
-
-#[derive(Serialize, Deserialize)]
-struct AccessTokenData {
-    user_id: i32,
-    exp: u64,
-    token_type: TokenType,
+pub struct CookieData {
+    session_id: String,
+    username: String,
 }
 
-impl Token for AccessTokenData {
-    fn exp(&self) -> u64 {
-        self.exp
-    }
-    fn token_type(&self) -> TokenType {
-        self.token_type.clone()
-    }
+pub enum CacheKey {
+    SESSION(String),
 }
 
-#[derive(Serialize, Deserialize)]
-struct RefreshTokenData {
-    user_id: i32,
-    exp: u64,
-    token_type: TokenType,
-}
-
-impl Token for RefreshTokenData {
-    fn exp(&self) -> u64 {
-        self.exp
-    }
-    fn token_type(&self) -> TokenType {
-        self.token_type.clone()
+impl CacheKey {
+    fn build_key(&self) -> String {
+        match self {
+            CacheKey::SESSION(session_id) => format!("AUTH_SESSION_{}", session_id),
+        }
     }
 }
 
 pub struct AuthService {
-    token_service: Arc<TokenService>,
+    cache: Arc<Cache>,
     users_repository: Arc<UsersRepository>,
 }
 
 impl AuthService {
-    pub fn new(token_service: Arc<TokenService>, users_repository: Arc<UsersRepository>) -> Self {
+    pub fn new(cache: Arc<Cache>, users_repository: Arc<UsersRepository>) -> Self {
         AuthService {
-            token_service,
+            cache,
             users_repository,
         }
     }
 
-    pub async fn sign_in(&self, payload: SignInRequest) -> AppResult<SignInResponse> {
+    pub async fn sign_in(&self, payload: SignInRequest, cookies: Cookies) -> AppResult<()> {
         let user = self
             .users_repository
             .get_user_by_email(&payload.email)
             .await?;
         self.verify_password(&payload.password, &user.password)?;
-        let (access_token, refresh_token) = self.create_tokens(user.id)?;
-        Ok(SignInResponse {
-            access_token,
-            refresh_token,
-        })
-    }
-
-    pub async fn refresh(&self, payload: RefreshTokenRequest) -> AppResult<RefreshTokenResponse> {
-        let claims = match self
-            .token_service
-            .get_claims_from_jwt::<RefreshTokenData>(&payload.refresh_token, TokenType::Refresh)
-        {
-            Ok(claims) => claims,
-            Err(e) => {
-                return Err(AppError::Unauthorized(
-                    "Invalid token".to_string(),
-                    Some(ErrorCode::JWTInvalid),
-                ));
-            }
-        };
-        if self
-            .token_service
-            .is_token_expired::<RefreshTokenData>(&payload.refresh_token, TokenType::Refresh)?
-        {
-            return Err(AppError::Unauthorized(
-                "Token expired".to_string(),
-                Some(ErrorCode::JWTExpired),
-            ));
-        }
-        let (access_token, refresh_token) = self.create_tokens(claims.user_id)?;
-
-        Ok(RefreshTokenResponse {
-            access_token,
-            refresh_token,
-        })
+        self.create_session(cookies, user.id).await?;
+        Ok(())
     }
 
     fn verify_password(&self, password: &str, hash: &str) -> AppResult<()> {
@@ -127,18 +76,40 @@ impl AuthService {
         Ok(())
     }
 
-    fn create_tokens(&self, user_id: i32) -> AppResult<(String, String)> {
-        let access_token = self.token_service.create_jwt(AccessTokenData {
-            user_id,
-            exp: get_current_timestamp() + ACCESS_TOKEN_EXPIRATION,
-            token_type: TokenType::Access,
-        })?;
+    async fn create_session(&self, cookies: Cookies, user_id: i32) -> AppResult<()> {
+        let session_id: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
 
-        let refresh_token = self.token_service.create_jwt(RefreshTokenData {
-            user_id,
-            exp: get_current_timestamp() + REFRESH_TOKEN_EXPIRATION,
-            token_type: TokenType::Refresh,
-        })?;
-        Ok((access_token, refresh_token))
+        let mut cache_con = self.cache.get_async_conn().await?;
+        let cache_key = CacheKey::SESSION(session_id.clone()).build_key();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .to_string();
+
+        let _: () = cache_con
+            .hset_multiple(
+                &cache_key,
+                &[
+                    ("session_id", session_id.clone()),
+                    ("created_at", timestamp.clone()),
+                    ("last_updated", timestamp),
+                    ("user_id", user_id.to_string()),
+                ],
+            )
+            .await?;
+
+        let _ = cache_con.expire(&cache_key, COOKIE_LIFETIME_SEC).await?;
+
+        let mut cookie = Cookie::new("x-authenticated", session_id);
+        cookie.set_secure(true);
+        cookie.set_http_only(true);
+        cookie.set_path("/");
+        cookies.add(cookie);
+        Ok(())
     }
 }
