@@ -13,16 +13,11 @@ use crate::{
     service::playlist_service::{PlaylistItem, PlaylistService},
 };
 
-/// How many milliseconds of audio each broadcast chunk represents (used for throttling).
 const CHUNK_MS: u64 = 100;
-/// Broadcast channel capacity (number of buffered chunks).
 const BROADCAST_CAPACITY: usize = 256;
 
-/// Distinguishes how the next track was selected.
 enum NextTrack {
-    /// Taken from the user-managed playlist queue.
     Queued(PlaylistItem),
-    /// Picked automatically from the database (no pending queue items).
     Auto(PlaylistItem),
 }
 
@@ -32,10 +27,6 @@ pub struct CurrentTrack {
     pub file_size: u64,
 }
 
-/// Runtime state of the radio broadcaster.
-///
-/// Track history is **not** maintained in memory; when the playlist queue is
-/// empty the broadcaster queries the database directly for a random track.
 pub struct RadioState {
     pub current_track: Option<CurrentTrack>,
 }
@@ -46,13 +37,10 @@ pub struct RadioService {
     playlist_service: Arc<PlaylistService>,
     track_repository: Arc<TrackRepository>,
     config: Arc<AppConfig>,
-    /// Notified whenever a new track is pushed onto the queue.  Used to
-    /// interrupt an in-progress auto-play so the queued track starts sooner.
     queue_notify: Arc<Notify>,
 }
 
 impl RadioService {
-    /// Create the service and immediately launch the background broadcaster task.
     pub fn new(
         playlist_service: Arc<PlaylistService>,
         track_repository: Arc<TrackRepository>,
@@ -82,12 +70,10 @@ impl RadioService {
         service
     }
 
-    /// Subscribe to the live audio broadcast.
     pub fn subscribe(&self) -> broadcast::Receiver<Bytes> {
         self.sender.subscribe()
     }
 
-    /// Create the songs directory if it does not already exist.
     pub fn create_songs_dir_if_not_exists(&self) -> AppResult<()> {
         let path = std::path::Path::new(self.config.songs_config.songs_dir_path.as_str());
         if !path.exists() {
@@ -96,7 +82,6 @@ impl RadioService {
         Ok(())
     }
 
-    /// Download a track to disk only if it is not already present.
     async fn download_track(&self, song_id: i32, owner_id: i32, url: String) -> AppResult<()> {
         let file_name = format!("{}_{}.mp3", owner_id, song_id);
         let file_path = format!("{}/{}", self.config.songs_config.songs_dir_path, file_name);
@@ -108,13 +93,11 @@ impl RadioService {
         Ok(())
     }
 
-    /// Background task: continuously picks and streams tracks.
     async fn run_broadcaster(&self) {
         loop {
             let next = match self.next_track_item().await {
                 Ok(next) => next,
                 Err(_) => {
-                    // No tracks available yet – wait and retry.
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     continue;
                 }
@@ -125,7 +108,6 @@ impl RadioService {
                 NextTrack::Auto(item) => (item, true),
             };
 
-            // Download the file only if it is not already on disk.
             if let Err(e) = self
                 .download_track(item.song_id, item.owner_id, item.download_url.clone())
                 .await
@@ -149,7 +131,7 @@ impl RadioService {
             let bytes_per_sec = if duration_secs > 0 {
                 file_size / duration_secs
             } else {
-                16_000 // fall back to ~128 kbps
+                16_000
             };
             let chunk_size = ((bytes_per_sec * CHUNK_MS) / 1000).max(1024) as usize;
 
@@ -163,12 +145,8 @@ impl RadioService {
             }
 
             if is_auto {
-                // When playing automatically, allow a new queued track to
-                // interrupt playback immediately.
                 let notified = self.queue_notify.notified();
                 tokio::pin!(notified);
-                // enable() ensures we catch a notification that fired between
-                // the previous iteration and now.
                 notified.as_mut().enable();
 
                 tokio::select! {
@@ -178,8 +156,6 @@ impl RadioService {
                         }
                     }
                     _ = notified => {
-                        // A queued track was added; stop auto-play so we loop
-                        // back and pick the queued track next iteration.
                     }
                 }
             } else {
@@ -197,7 +173,6 @@ impl RadioService {
         }
     }
 
-    /// Read a file in chunks and broadcast at real-time rate.
     async fn stream_file(
         &self,
         file_path: &str,
@@ -212,10 +187,9 @@ impl RadioService {
 
             let n = file.read(&mut buf).await?;
             if n == 0 {
-                break; // EOF
+                break;
             }
 
-            // Broadcast – ignore errors when there are no active subscribers.
             let _ = self.sender.send(Bytes::copy_from_slice(&buf[..n]));
 
             let chunk_duration_ms = if bytes_per_sec > 0 {
@@ -233,14 +207,11 @@ impl RadioService {
         Ok(())
     }
 
-    /// Choose the next track: first from the playlist queue, then a random
-    /// track from the database.
     async fn next_track_item(&self) -> AppResult<NextTrack> {
         if let Ok(item) = self.playlist_service.pop_track().await {
             return Ok(NextTrack::Queued(item));
         }
 
-        // Fall back to a random track from the database.
         let track = self.track_repository.find_random_track().await?;
         let item = PlaylistItem {
             id: track.id,

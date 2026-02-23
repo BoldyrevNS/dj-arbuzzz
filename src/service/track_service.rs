@@ -4,11 +4,8 @@ use tokio::sync::Notify;
 
 use crate::{
     dto::{request::track::UserSelectTrackRequest, response::track::SearchTrackResponse},
-    error::app_error::{AppError, AppResult},
-    infrastucture::{
-        database::models::NewTrack,
-        repositories::track_repository::TrackRepository,
-    },
+    error::app_error::{AppError, AppResult, ErrorCode},
+    infrastucture::{database::models::NewTrack, repositories::track_repository::TrackRepository},
     service::playlist_service::{PlaylistItem, PlaylistService},
 };
 
@@ -91,7 +88,15 @@ impl TrackService {
                 None,
             ));
         }
+
         let track = tracks.response[0].clone();
+        if track.duration > 60 * 10 {
+            return Err(AppError::BadRequest(
+                "Track duration limit".to_string(),
+                Some(ErrorCode::TrackDurationLimit),
+            ));
+        }
+
         let (track, _) = self
             .track_repository
             .create_track_with_user_track(
