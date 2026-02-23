@@ -20,6 +20,7 @@ pub enum ErrorCode {
     ResendOTPTooManyRequests,
     SignUpFailed,
     JWTInvalid,
+    TrackDurationLimit,
 }
 
 #[derive(serde::Serialize)]
@@ -89,6 +90,7 @@ impl IntoResponse for AppError {
             Some(ErrorCode::ResendOTPTooManyRequests) => 1006,
             Some(ErrorCode::JWTInvalid) => 1007,
             Some(ErrorCode::SignUpFailed) => 1102,
+            Some(ErrorCode::TrackDurationLimit) => 1201,
             None => 1000,
         };
         let body = Json(json!({

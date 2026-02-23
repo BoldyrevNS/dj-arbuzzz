@@ -1,16 +1,11 @@
 use std::sync::Arc;
 
+use tokio::sync::Notify;
+
 use crate::{
     dto::{request::track::UserSelectTrackRequest, response::track::SearchTrackResponse},
-    error::app_error::{AppError, AppResult},
-    infrastucture::{
-        database::models::{NewTrack, NewUserTrack},
-        repositories::{
-            track_repository::TrackRepository,
-            user_track_repository::{self, UserTrackRepository},
-        },
-    },
-    schema::tracks::owner_id,
+    error::app_error::{AppError, AppResult, ErrorCode},
+    infrastucture::{database::models::NewTrack, repositories::track_repository::TrackRepository},
     service::playlist_service::{PlaylistItem, PlaylistService},
 };
 
@@ -43,6 +38,7 @@ pub struct TrackService {
     track_repository: Arc<TrackRepository>,
     playlist_service: Arc<PlaylistService>,
     config: Arc<crate::config::AppConfig>,
+    queue_notify: Arc<Notify>,
 }
 
 impl TrackService {
@@ -50,11 +46,13 @@ impl TrackService {
         track_repository: Arc<TrackRepository>,
         playlist_service: Arc<PlaylistService>,
         config: Arc<crate::config::AppConfig>,
+        queue_notify: Arc<Notify>,
     ) -> Self {
         TrackService {
             track_repository,
             playlist_service,
             config,
+            queue_notify,
         }
     }
 
@@ -90,7 +88,15 @@ impl TrackService {
                 None,
             ));
         }
+
         let track = tracks.response[0].clone();
+        if track.duration > 60 * 10 {
+            return Err(AppError::BadRequest(
+                "Track duration limit".to_string(),
+                Some(ErrorCode::TrackDurationLimit),
+            ));
+        }
+
         let (track, _) = self
             .track_repository
             .create_track_with_user_track(
@@ -110,11 +116,15 @@ impl TrackService {
         self.playlist_service
             .add_new_track(PlaylistItem {
                 id: track.id,
+                song_id: track.song_id,
+                owner_id: track.owner_id,
                 artist: track.artist,
                 title: track.title,
                 duration_sec: track.duration_sec,
+                download_url: track.download_url,
             })
             .await?;
+        self.queue_notify.notify_one();
         Ok(())
     }
 
