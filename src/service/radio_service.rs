@@ -3,7 +3,7 @@ use std::{fs, sync::Arc, time::Instant};
 use axum::body::Bytes;
 use tokio::{
     io::AsyncReadExt,
-    sync::{broadcast, Notify, RwLock},
+    sync::{Notify, RwLock, broadcast},
 };
 
 use crate::{
@@ -77,6 +77,9 @@ impl RadioService {
         });
 
         service
+            .create_songs_dir_if_not_exists()
+            .expect("Failed to create songs directory");
+        service
     }
 
     /// Subscribe to the live audio broadcast.
@@ -132,10 +135,7 @@ impl RadioService {
             }
 
             let file_name = format!("{}_{}.mp3", item.owner_id, item.song_id);
-            let file_path = format!(
-                "{}/{}",
-                self.config.songs_config.songs_dir_path, file_name
-            );
+            let file_path = format!("{}/{}", self.config.songs_config.songs_dir_path, file_name);
 
             let file_size: u64 = match tokio::fs::metadata(&file_path).await {
                 Ok(m) => m.len(),
