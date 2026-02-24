@@ -67,28 +67,31 @@ services:
       migrations:
         condition: service_completed_successfully
     environment:
+      PORT: 8080
       DATABASE_URL: postgresql://${POSTGRES_USER:-djarbuzzz}:${POSTGRES_PASSWORD:-djarbuzzz_password}@postgres:5432/${POSTGRES_DB:-djarbuzzz_db}
       REDIS_URL: redis://redis:6379
       RUST_LOG: ${RUST_LOG:-info}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-this}
+      RESTORE_SECRET: ${RESTORE_SECRET:-change-this}
+      SIGN_UP_SECRET: ${SIGN_UP_SECRET:-change-this}
+      ACCESS_SECRET: ${ACCESS_SECRET:-change-this}
+      REFRESH_SECRET: ${REFRESH_SECRET:-change-this}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_LOGIN: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      MUSIC_API_TOKEN: ${MUSIC_API_TOKEN:-}
+      MUSIC_API_URL: ${MUSIC_API_URL:-https://api.vk.com/method/audio}
       SONGS_PATH: ${SONGS_PATH:-/app/songs}
+      SONGS_DIR_PATH: ${SONGS_PATH:-/app/songs}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:
       - songs_data:/app/songs
     networks:
       - app-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   # Nuxt Frontend
   frontend:
