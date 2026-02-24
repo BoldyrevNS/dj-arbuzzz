@@ -24,6 +24,11 @@ echo "🔐 Initializing Let's Encrypt for $DOMAIN..."
 # Create required directories
 mkdir -p certbot/conf
 mkdir -p certbot/www
+chmod 755 certbot/conf certbot/www
+
+echo "### Checking directories..."
+ls -la certbot/
+echo ""
 
 # Download recommended TLS parameters
 if [ ! -e "certbot/conf/options-ssl-nginx.conf" ] || [ ! -e "certbot/conf/ssl-dhparams.pem" ]; then
@@ -79,13 +84,28 @@ EOF
 cp nginx/nginx.tmp.conf nginx/nginx.conf
 echo ""
 
+# Stop all services to release ports
+echo "### Stopping all services..."
+docker-compose down
+echo ""
+
 # Start nginx with HTTP-only config
-echo "### Starting nginx..."
-docker-compose up --force-recreate -d nginx
+echo "### Starting nginx (standalone mode for certificate verification)..."
+docker-compose up --no-deps --force-recreate -d nginx
 echo ""
 
 # Wait for nginx to start
-sleep 5
+echo "### Waiting for nginx to be ready..."
+sleep 10
+
+# Test nginx is responding
+echo "### Testing nginx HTTP endpoint..."
+if docker-compose exec -T nginx wget -q -O- http://localhost/.well-known/acme-challenge/test 2>/dev/null; then
+    echo "✓ Nginx is responding"
+else
+    echo "⚠ Nginx test endpoint check (may be normal)"
+fi
+echo ""
 
 # Delete dummy certificate
 echo "### Deleting dummy certificate for $DOMAIN..."

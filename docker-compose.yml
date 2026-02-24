@@ -93,6 +93,12 @@ services:
       - songs_data:/app/songs
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f backend-rust || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # Nuxt Frontend
   frontend:
@@ -102,8 +108,7 @@ services:
     container_name: dj-arbuzzz-frontend
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     environment:
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-http://localhost:8080}
       NUXT_API_SECRET: ${NUXT_API_SECRET:-your-nuxt-secret}
