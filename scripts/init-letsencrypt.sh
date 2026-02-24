@@ -67,12 +67,11 @@ http {
     default_type application/octet-stream;
 
     server {
-        listen 80;
+        listen 80 default_server;
         server_name _;
 
         location /.well-known/acme-challenge/ {
-            root /var/www/certbot;
-            try_files \$uri =404;
+            alias /var/www/certbot/.well-known/acme-challenge/;
         }
 
         location / {
@@ -111,13 +110,6 @@ echo ""
 # Wait for nginx to start
 echo "### Waiting for nginx to be ready..."
 sleep 5
-
-# Remove default config that conflicts
-echo "### Removing default nginx config..."
-docker-compose exec nginx rm -f /etc/nginx/conf.d/default.conf || true
-docker-compose exec nginx nginx -s reload
-sleep 2
-echo ""
 
 # Check nginx config syntax
 echo "### Checking nginx configuration..."
