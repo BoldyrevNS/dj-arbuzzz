@@ -1,0 +1,24 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap");
+
+html,
+body,
+#__nuxt {
+  padding: 0;
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  background-color: $main_background;
+  font-family: "Roboto", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
+  text-decoration: none;
+  color: $text_color;
+}
+
+a {
+  text-decoration: none;
+}
+
+button {
+  padding: 0;
+}

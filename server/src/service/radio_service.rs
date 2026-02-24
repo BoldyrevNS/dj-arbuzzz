@@ -8,6 +8,7 @@ use tokio::{
 
 use crate::{
     config::AppConfig,
+    dto::response::raido::GetCurrentTrackResponse,
     error::app_error::AppResult,
     infrastucture::repositories::track_repository::TrackRepository,
     service::playlist_service::{PlaylistItem, PlaylistService},
@@ -80,6 +81,20 @@ impl RadioService {
             fs::create_dir_all(path)?;
         }
         Ok(())
+    }
+
+    pub async fn get_current_track(&self) -> GetCurrentTrackResponse {
+        let state = self.state.read().await;
+        if let Some(current_track) = &state.current_track {
+            GetCurrentTrackResponse {
+                name: Some(format!(
+                    "{} - {}",
+                    current_track.item.artist, current_track.item.title
+                )),
+            }
+        } else {
+            GetCurrentTrackResponse { name: None }
+        }
     }
 
     async fn download_track(&self, song_id: i32, owner_id: i32, url: String) -> AppResult<()> {

@@ -5,14 +5,18 @@ use axum::{
     extract::State,
     response::Response,
 };
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::AppState;
+use crate::{
+    AppState,
+    dto::response::{ApiResponse, ApiResult, raido::GetCurrentTrackResponse},
+};
 
 pub fn radio_router(app_state: Arc<AppState>) -> OpenApiRouter {
     OpenApiRouter::new()
         .routes(routes!(stream_radio))
+        .routes(routes!(get_current_track))
         .with_state(app_state)
 }
 
@@ -28,12 +32,8 @@ pub fn radio_router(app_state: Arc<AppState>) -> OpenApiRouter {
 async fn stream_radio(State(state): State<Arc<AppState>>) -> Response {
     let receiver = state.services.radio_service.subscribe();
 
-    // Convert the broadcast receiver into a Stream, discarding lagged-frame errors.
-    let stream = BroadcastStream::new(receiver).filter_map(|result| {
-        result
-            .ok()
-            .map(|bytes| Ok::<Bytes, Infallible>(bytes))
-    });
+    let stream = BroadcastStream::new(receiver)
+        .filter_map(|result| result.ok().map(|bytes| Ok::<Bytes, Infallible>(bytes)));
 
     Response::builder()
         .status(200)
@@ -42,4 +42,20 @@ async fn stream_radio(State(state): State<Arc<AppState>>) -> Response {
         .header("Transfer-Encoding", "chunked")
         .body(Body::from_stream(stream))
         .unwrap()
+}
+#[utoipa::path(
+        get,
+        path = "/current-track",
+        tag = "Radio",
+        responses(
+            (status = 200, description = "Success", body = GetCurrentTrackResponse),
+            (status = 400, description = "Bad Request"),
+            (status = 500, description = "Internal Server Error")
+        )
+    )]
+async fn get_current_track(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<GetCurrentTrackResponse> {
+    let res = state.services.radio_service.get_current_track().await;
+    Ok(ApiResponse::OK(Some(res)))
 }

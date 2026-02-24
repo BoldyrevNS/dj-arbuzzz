@@ -137,6 +137,7 @@ impl TrackService {
             &[
                 ("q", search_value),
                 ("access_token", self.config.music_api_token.as_str()),
+                ("count", "5"),
                 ("v", "5.131"),
             ],
         )

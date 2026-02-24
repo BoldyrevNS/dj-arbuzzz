@@ -10,6 +10,16 @@ pub enum AppEnvironment {
     Production,
 }
 
+impl PartialEq for AppEnvironment {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (AppEnvironment::Development, AppEnvironment::Development)
+                | (AppEnvironment::Production, AppEnvironment::Production)
+        )
+    }
+}
+
 pub struct AppConfig {
     pub env: AppEnvironment,
     pub db_config: database::DatabaseConfig,

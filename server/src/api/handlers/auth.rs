@@ -16,6 +16,7 @@ pub fn auth_router(app_state: Arc<AppState>) -> OpenApiRouter {
     OpenApiRouter::new()
         .routes(routes!(sign_in))
         .routes(routes!(logout))
+        .routes(routes!(check_session))
         .with_state(app_state)
 }
 
@@ -67,5 +68,27 @@ async fn logout(
         .auth_service
         .delete_session(cookies, sid)
         .await?;
+    Ok(ApiResponse::OK(None))
+}
+
+#[utoipa::path(
+        get,
+        path = "/session",
+        tag = "Auth",
+        responses(
+            (status = 200, description = "Session is valid"),
+            (status = 401, description = "Unauthorized")
+        )
+    )]
+async fn check_session(State(state): State<Arc<AppState>>, req: Request<Body>) -> ApiResult<()> {
+    let sid = state.services.auth_service.get_session_id_from_req(&req)?;
+
+    // Проверяем существование сессии в кэше
+    state
+        .services
+        .auth_service
+        .get_session_from_cache_and_update(sid)
+        .await?;
+
     Ok(ApiResponse::OK(None))
 }
