@@ -30,12 +30,12 @@ export const useSignUpStore = defineStore('signUp', () => {
 
 	async function makeSignupStartRequest() {
 		try {
-			const res = await $fetch<OTPMeta>('/api/auth/sign-up/start', {
+			const res = await $fetch<{ data: OTPMeta }>('/api/auth/sign-up/start', {
 				method: 'POST',
 				body: { email: email.value },
 			});
-			sessionToken.value = res.token;
-			resendTimeoutMs.value = res.resend_timeout_ms;
+			sessionToken.value = res.data.token;
+			resendTimeoutMs.value = res.data.timeout_seconds;
 			currentStep.value = SignUpStep.OTP_CONFIRMATION;
 		}
 		catch (error) {
@@ -45,11 +45,11 @@ export const useSignUpStore = defineStore('signUp', () => {
 
 	async function makeResendOtpRequest() {
 		try {
-			const res = await $fetch<OTPMeta>('/api/auth/sign-up/resend-otp', {
+			const res = await $fetch<{ data: OTPMeta }>('/api/auth/sign-up/resend-otp', {
 				method: 'POST',
 				body: { token: sessionToken.value },
 			});
-			resendTimeoutMs.value = res.resend_timeout_ms;
+			resendTimeoutMs.value = res.data.timeout_seconds;
 		}
 		catch (error) {
 			console.error('Ошибка при повторной отправке OTP:', error);

@@ -1,7 +1,9 @@
 use redis::AsyncCommands;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 use crate::{
+    dto::response::websocket::{PlaylistData, PlaylistItemData, WebSocketMessage},
     error::app_error::AppResult,
     infrastucture::cache::{client::Cache, keys::AppCacheKey},
 };
@@ -22,13 +24,46 @@ pub struct Playlist {
     pub items: Vec<PlaylistItem>,
 }
 
+const WS_EVENT_CAPACITY: usize = 100;
+
 pub struct PlaylistService {
     cache: Arc<Cache>,
+    ws_event_sender: broadcast::Sender<WebSocketMessage>,
 }
 
 impl PlaylistService {
     pub fn new(cache: Arc<Cache>) -> Self {
-        PlaylistService { cache }
+        let (ws_event_sender, _) = broadcast::channel(WS_EVENT_CAPACITY);
+        PlaylistService { 
+            cache,
+            ws_event_sender,
+        }
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<WebSocketMessage> {
+        self.ws_event_sender.subscribe()
+    }
+
+    async fn notify_playlist_changed(&self) -> AppResult<()> {
+        let playlist = self.get_playlist().await?;
+        let items: Vec<PlaylistItemData> = playlist.items.iter().map(|item| PlaylistItemData {
+            artist: item.artist.clone(),
+            title: item.title.clone(),
+            duration_sec: item.duration_sec,
+        }).collect();
+        let msg = WebSocketMessage::Playlist(PlaylistData { items });
+        let _ = self.ws_event_sender.send(msg);
+        Ok(())
+    }
+
+    pub async fn get_playlist_ws(&self) -> AppResult<PlaylistData> {
+        let playlist = self.get_playlist().await?;
+        let items: Vec<PlaylistItemData> = playlist.items.iter().map(|item| PlaylistItemData {
+            artist: item.artist.clone(),
+            title: item.title.clone(),
+            duration_sec: item.duration_sec,
+        }).collect();
+        Ok(PlaylistData { items })
     }
 
     pub async fn add_new_track(&self, item: PlaylistItem) -> AppResult<()> {
@@ -42,6 +77,7 @@ impl PlaylistService {
         new_playlist.items.push(item);
         let playlist_str = serde_json::to_string(&new_playlist)?;
         let _: () = con.set(key, playlist_str).await?;
+        self.notify_playlist_changed().await?;
         Ok(())
     }
 
@@ -62,6 +98,7 @@ impl PlaylistService {
         let item = new_playlist.items.remove(0);
         let playlist_str = serde_json::to_string(&new_playlist)?;
         let _: () = con.set(key, playlist_str).await?;
+        let _ = self.notify_playlist_changed().await;
         Ok(item)
     }
 

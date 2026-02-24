@@ -24,6 +24,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/radio",
             handlers::radio::radio_router(state.clone()),
         )
+        .nest(
+            "/api/v1/ws",
+            handlers::websocket::websocket_router(state.clone()),
+        )
         .split_for_parts();
     if state.config.env == AppEnvironment::Development {
         let router = router.merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", api));

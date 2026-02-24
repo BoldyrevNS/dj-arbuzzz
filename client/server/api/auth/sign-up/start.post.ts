@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
 	const config = useRuntimeConfig(event);
 
 	try {
-		const res = await fetch(`${config.public.apiBase}/auth/sign_up_start`, {
+		const res = await fetch(`${config.public.apiBase}/sign-up/start`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',

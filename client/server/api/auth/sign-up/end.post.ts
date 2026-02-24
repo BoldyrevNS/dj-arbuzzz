@@ -11,9 +11,12 @@ export default defineEventHandler(async (event) => {
 	const config = useRuntimeConfig();
 
 	try {
-		const res = await $fetch(`${config.public.apiBase}/auth/sign_up_end`, {
+		const res = await $fetch(`${config.public.apiBase}/sign-up/complete`, {
 			method: 'POST',
-			body: { token, username, password },
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ token, username, password }),
 		});
 
 		return res;

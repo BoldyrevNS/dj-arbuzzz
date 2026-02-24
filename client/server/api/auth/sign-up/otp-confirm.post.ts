@@ -10,9 +10,12 @@ export default defineEventHandler(async (event) => {
 	const config = useRuntimeConfig();
 
 	try {
-		const res = await $fetch(`${config.public.apiBase}/auth/sign_up_otp_confirm`, {
+		const res = await $fetch(`${config.public.apiBase}/sign-up/verify-otp`, {
 			method: 'POST',
-			body: { token, otp },
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ token, otp }),
 		});
 
 		return res;

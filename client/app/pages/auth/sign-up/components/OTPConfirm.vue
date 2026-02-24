@@ -3,7 +3,7 @@ import { useSignUpStore } from '../store';
 import { z } from 'zod';
 
 const signUpStore = useSignUpStore();
-const { email, resendTimeoutMs, otp } = storeToRefs(signUpStore);
+const { email, otp } = storeToRefs(signUpStore);
 const isLoading = ref(false);
 
 const formSchema = toTypedSchema(z.object({
@@ -42,11 +42,11 @@ async function handleSubmit() {
 			Введите 6-ти значный код, отправленный на <span class="email">{{ email }}</span>
 		</template>
 		<template #actions>
-			<ResendTimer
+			<!-- <ResendTimer
 				v-model="resendTimeoutMs"
 				:disabled="isLoading"
 				@click="signUpStore.makeResendOtpRequest"
-			/>
+			/> -->
 			<Button
 				type="submit"
 				stretched

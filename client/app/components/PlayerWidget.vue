@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import z from 'zod';
+import { toTypedSchema } from '@vee-validate/zod';
 
 type SearchTrackResponse = {
 	data: {
@@ -18,12 +19,7 @@ const audioElement = ref<HTMLAudioElement | null>(null);
 const searchedTracks = ref<Array<{ name: string; owner_id: number; song_id: number }>>([]);
 const searchFormLoading = ref(false);
 
-const { data: trackData } = await useFetch<{ data: { name: string | null } }>('/api/radio/current-track', {
-	server: true,
-	lazy: false,
-});
-
-const currentTrackName = computed(() => trackData.value?.data?.name ?? null);
+const { currentTrack, playlist } = useRadioWebSocket();
 
 async function togglePlay() {
 	if (isPlaying.value) {
@@ -93,10 +89,16 @@ const searchFormSchema = toTypedSchema(z.object({
 		<div class="items">
 			<BasicForm header="Плеер">
 				<div
-					v-if="currentTrackName"
+					v-if="currentTrack"
 					class="current-track"
 				>
-					{{ currentTrackName }}
+					{{ currentTrack }}
+				</div>
+				<div
+					v-else
+					class="current-track"
+				>
+					Трек не выбран
 				</div>
 				<Spinner v-if="isLoading" />
 				<Button
@@ -108,7 +110,16 @@ const searchFormSchema = toTypedSchema(z.object({
 				</Button>
 			</BasicForm>
 			<BasicForm header="Очередь">
-				Жопа
+				<div v-if="playlist.length === 0">
+					Очередь пуста
+				</div>
+				<div
+					v-for="(item, index) in playlist"
+					:key="index"
+					class="playlist-item"
+				>
+					{{ item.artist }} - {{ item.title }}
+				</div>
 			</BasicForm>
 		</div>
 		<BasicForm
@@ -125,7 +136,10 @@ const searchFormSchema = toTypedSchema(z.object({
 					name="searchValue"
 					placeholder="Введите название трека"
 				/>
-				<Button stretched>
+				<Button
+					stretched
+					type="submit"
+				>
 					Найти
 				</Button>
 			</template>
@@ -160,5 +174,17 @@ const searchFormSchema = toTypedSchema(z.object({
 			background-color: $glass_item_background_focused;
 			cursor: pointer;
 		}
+	}
+
+	.playlist-item {
+		padding: 10px;
+		background-color: rgba(255, 255, 255, 0.05);
+		border-radius: 5px;
+		margin-bottom: 5px;
+	}
+
+	.current-track {
+		padding: 10px;
+		font-weight: bold;
 	}
 </style>

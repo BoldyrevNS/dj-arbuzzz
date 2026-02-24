@@ -5,6 +5,6 @@ export enum SignUpStep {
 }
 
 export type OTPMeta = {
-	resend_timeout_ms: number;
+	timeout_seconds: number;
 	token: string;
 };

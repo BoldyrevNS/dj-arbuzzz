@@ -8,7 +8,10 @@ use tokio::{
 
 use crate::{
     config::AppConfig,
-    dto::response::raido::GetCurrentTrackResponse,
+    dto::response::{
+        raido::GetCurrentTrackResponse,
+        websocket::{CurrentTrackData, WebSocketMessage},
+    },
     error::app_error::AppResult,
     infrastucture::repositories::track_repository::TrackRepository,
     service::playlist_service::{PlaylistItem, PlaylistService},
@@ -16,6 +19,7 @@ use crate::{
 
 const CHUNK_MS: u64 = 100;
 const BROADCAST_CAPACITY: usize = 256;
+const WS_EVENT_CAPACITY: usize = 100;
 
 enum NextTrack {
     Queued(PlaylistItem),
@@ -34,6 +38,8 @@ pub struct RadioState {
 
 pub struct RadioService {
     sender: broadcast::Sender<Bytes>,
+    dfpwm_sender: broadcast::Sender<Bytes>,
+    ws_event_sender: broadcast::Sender<WebSocketMessage>,
     pub state: Arc<RwLock<RadioState>>,
     playlist_service: Arc<PlaylistService>,
     track_repository: Arc<TrackRepository>,
@@ -49,8 +55,12 @@ impl RadioService {
         queue_notify: Arc<Notify>,
     ) -> Arc<Self> {
         let (sender, _) = broadcast::channel(BROADCAST_CAPACITY);
+        let (dfpwm_sender, _) = broadcast::channel(BROADCAST_CAPACITY);
+        let (ws_event_sender, _) = broadcast::channel(WS_EVENT_CAPACITY);
         let service = Arc::new(RadioService {
             sender,
+            dfpwm_sender,
+            ws_event_sender,
             state: Arc::new(RwLock::new(RadioState {
                 current_track: None,
             })),
@@ -65,6 +75,15 @@ impl RadioService {
             svc.run_broadcaster().await;
         });
 
+        // Forward playlist events through radio service
+        let svc = service.clone();
+        tokio::spawn(async move {
+            let mut rx = svc.playlist_service.subscribe_events();
+            while let Ok(msg) = rx.recv().await {
+                let _ = svc.ws_event_sender.send(msg);
+            }
+        });
+
         service
             .create_songs_dir_if_not_exists()
             .expect("Failed to create songs directory");
@@ -73,6 +92,32 @@ impl RadioService {
 
     pub fn subscribe(&self) -> broadcast::Receiver<Bytes> {
         self.sender.subscribe()
+    }
+
+    pub fn subscribe_dfpwm(&self) -> broadcast::Receiver<Bytes> {
+        self.dfpwm_sender.subscribe()
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<WebSocketMessage> {
+        self.ws_event_sender.subscribe()
+    }
+
+    pub async fn get_current_track_ws(&self) -> AppResult<CurrentTrackData> {
+        let state = self.state.read().await;
+        let name = if let Some(current_track) = &state.current_track {
+            Some(format!(
+                "{} - {}",
+                current_track.item.artist, current_track.item.title
+            ))
+        } else {
+            None
+        };
+        Ok(CurrentTrackData { name })
+    }
+
+    fn notify_current_track_changed(&self, name: Option<String>) {
+        let msg = WebSocketMessage::CurrentTrack(CurrentTrackData { name });
+        let _ = self.ws_event_sender.send(msg);
     }
 
     pub fn create_songs_dir_if_not_exists(&self) -> AppResult<()> {
@@ -159,32 +204,52 @@ impl RadioService {
                 });
             }
 
+            // Notify WebSocket clients about track change
+            self.notify_current_track_changed(Some(format!("{} - {}", item.artist, item.title)));
+
             if is_auto {
                 let notified = self.queue_notify.notified();
                 tokio::pin!(notified);
                 notified.as_mut().enable();
 
+                let mp3_path = file_path.clone();
+                let dfpwm_path = file_path.clone();
+
                 tokio::select! {
-                    result = self.stream_file(&file_path, chunk_size, bytes_per_sec) => {
-                        if let Err(e) = result {
-                            eprintln!("[radio] Error streaming {}: {}", file_path, e);
+                    _ = async {
+                        let (mp3_result, dfpwm_result) = tokio::join!(
+                            self.stream_file(&mp3_path, chunk_size, bytes_per_sec),
+                            self.stream_file_dfpwm(&dfpwm_path, bytes_per_sec)
+                        );
+                        if let Err(e) = mp3_result {
+                            eprintln!("[radio] Error streaming MP3 {}: {}", mp3_path, e);
                         }
-                    }
+                        if let Err(e) = dfpwm_result {
+                            eprintln!("[radio] Error streaming DFPWM {}: {}", dfpwm_path, e);
+                        }
+                    } => {}
                     _ = notified => {
                     }
                 }
             } else {
-                if let Err(e) = self
-                    .stream_file(&file_path, chunk_size, bytes_per_sec)
-                    .await
-                {
-                    eprintln!("[radio] Error streaming {}: {}", file_path, e);
+                let (mp3_result, dfpwm_result) = tokio::join!(
+                    self.stream_file(&file_path, chunk_size, bytes_per_sec),
+                    self.stream_file_dfpwm(&file_path, bytes_per_sec)
+                );
+                if let Err(e) = mp3_result {
+                    eprintln!("[radio] Error streaming MP3 {}: {}", file_path, e);
+                }
+                if let Err(e) = dfpwm_result {
+                    eprintln!("[radio] Error streaming DFPWM {}: {}", file_path, e);
                 }
             }
 
             {
                 self.state.write().await.current_track = None;
             }
+
+            // Notify WebSocket clients that track ended
+            self.notify_current_track_changed(None);
         }
     }
 
@@ -217,6 +282,153 @@ impl RadioService {
             if !sleep_dur.is_zero() {
                 tokio::time::sleep(sleep_dur).await;
             }
+        }
+
+        Ok(())
+    }
+
+    async fn stream_file_dfpwm(&self, file_path: &str, _bytes_per_sec: u64) -> AppResult<()> {
+        use symphonia::core::audio::SampleBuffer;
+        use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+        use symphonia::core::formats::FormatOptions;
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::MetadataOptions;
+        use symphonia::core::probe::Hint;
+
+        let file = std::fs::File::open(file_path)?;
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+        let mut hint = Hint::new();
+        hint.with_extension("mp3");
+
+        let meta_opts: MetadataOptions = Default::default();
+        let fmt_opts: FormatOptions = Default::default();
+
+        let probed = symphonia::default::get_probe()
+            .format(&hint, mss, &fmt_opts, &meta_opts)
+            .map_err(|e| anyhow::anyhow!("Failed to probe format: {}", e))?;
+
+        let mut format = probed.format;
+        let track = format
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .ok_or_else(|| anyhow::anyhow!("No supported audio tracks"))?;
+
+        let dec_opts: DecoderOptions = Default::default();
+        let mut decoder = symphonia::default::get_codecs()
+            .make(&track.codec_params, &dec_opts)
+            .map_err(|e| anyhow::anyhow!("Failed to create decoder: {}", e))?;
+
+        let track_id = track.id;
+        let mut dfpwm_encoder = crate::service::dfpwm::DfpwmEncoder::new();
+
+        // DFPWM requires 48kHz mono signed 8-bit PCM
+        let mut sample_buf: Option<SampleBuffer<i16>> = None;
+        let mut saved_spec = None;
+        let mut resampled_buf = Vec::new();
+
+        let chunk_size = 6000; // ~125ms at 48kHz
+        let mut output_buffer = Vec::with_capacity(chunk_size);
+
+        loop {
+            let packet = match format.next_packet() {
+                Ok(packet) => packet,
+                Err(_) => break,
+            };
+
+            if packet.track_id() != track_id {
+                continue;
+            }
+
+            let decoded = match decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(_) => continue,
+            };
+
+            if sample_buf.is_none() {
+                let spec = *decoded.spec();
+                saved_spec = Some(spec);
+                let duration = decoded.capacity() as u64;
+                sample_buf = Some(SampleBuffer::<i16>::new(duration, spec));
+            }
+
+            if let Some(ref mut buf) = sample_buf {
+                buf.copy_interleaved_ref(decoded);
+
+                let samples = buf.samples();
+                let spec = saved_spec.as_ref().unwrap();
+
+                // Convert to mono if needed
+                let mono_samples: Vec<i16> = if spec.channels.count() > 1 {
+                    samples
+                        .chunks(spec.channels.count())
+                        .map(|chunk| {
+                            let sum: i32 = chunk.iter().map(|&s| s as i32).sum();
+                            (sum / chunk.len() as i32) as i16
+                        })
+                        .collect()
+                } else {
+                    samples.to_vec()
+                };
+
+                // Resample to 48kHz if needed
+                let target_rate = 48000;
+                let source_rate = spec.rate;
+
+                let resampled = if source_rate != target_rate {
+                    let ratio = target_rate as f32 / source_rate as f32;
+                    let new_len = (mono_samples.len() as f32 * ratio) as usize;
+                    (0..new_len)
+                        .map(|i| {
+                            let pos = i as f32 / ratio;
+                            let idx = pos as usize;
+                            if idx >= mono_samples.len() - 1 {
+                                mono_samples[mono_samples.len() - 1]
+                            } else {
+                                let frac = pos - idx as f32;
+                                let a = mono_samples[idx] as f32;
+                                let b = mono_samples[idx + 1] as f32;
+                                (a + (b - a) * frac) as i16
+                            }
+                        })
+                        .collect()
+                } else {
+                    mono_samples
+                };
+
+                // Convert to signed 8-bit
+                for &sample in &resampled {
+                    let sample_8bit = (sample >> 8) as i8;
+                    resampled_buf.push(sample_8bit);
+                }
+
+                // Encode to DFPWM in chunks
+                while resampled_buf.len() >= chunk_size {
+                    let chunk: Vec<i8> = resampled_buf.drain(..chunk_size).collect();
+
+                    output_buffer.clear();
+                    dfpwm_encoder.encode(&chunk, &mut output_buffer);
+
+                    let _ = self
+                        .dfpwm_sender
+                        .send(Bytes::copy_from_slice(&output_buffer));
+
+                    // Timing: chunk_size samples at 48kHz
+                    let duration_ms = (chunk_size * 1000) / 48000;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(duration_ms as u64))
+                        .await;
+                }
+            }
+        }
+
+        // Flush remaining samples
+        if !resampled_buf.is_empty() {
+            output_buffer.clear();
+            dfpwm_encoder.encode(&resampled_buf, &mut output_buffer);
+            let _ = self
+                .dfpwm_sender
+                .send(Bytes::copy_from_slice(&output_buffer));
         }
 
         Ok(())

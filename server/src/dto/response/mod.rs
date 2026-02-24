@@ -13,6 +13,7 @@ use crate::error::app_error::AppError;
 pub mod auth;
 pub mod raido;
 pub mod track;
+pub mod websocket;
 
 #[derive(Serialize)]
 struct Res<T: Serialize> {

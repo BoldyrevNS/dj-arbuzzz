@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod dfpwm;
 pub mod otp_service;
 pub mod playlist_service;
 pub mod radio_service;

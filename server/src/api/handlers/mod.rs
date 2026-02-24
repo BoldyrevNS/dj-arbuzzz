@@ -9,6 +9,7 @@ pub mod auth;
 pub mod radio;
 pub mod sign_up;
 pub mod track;
+pub mod websocket;
 
 #[derive(Clone, Debug)]
 pub struct AuthData {
