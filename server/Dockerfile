@@ -6,18 +6,28 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /app
 
-# Copy manifests
+# Copy manifests first to cache dependencies
 COPY Cargo.toml Cargo.lock* ./
 
-# Copy source code
+# Create dummy source to build dependencies
+RUN mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "pub fn lib() {}" > src/lib.rs
+
+# Build dependencies (this layer will be cached)
+RUN cargo build --release && \
+    rm -rf src
+
+# Copy actual source code
 COPY . .
 
-# Build the application in release mode
+# Build the application (only app code, deps are cached)
 RUN cargo build --release
 
 # Runtime stage
