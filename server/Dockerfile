@@ -1,5 +1,5 @@
 # Build stage
-FROM rustlang/rust:nightly-slim as builder
+FROM rustlang/rust:nightly-bookworm AS builder
 
 # Install required dependencies
 RUN apt-get update && apt-get install -y \
@@ -31,12 +31,12 @@ COPY . .
 RUN cargo build --release
 
 # Runtime stage
-FROM debian:trixie-slim
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libpq5 \
-    libssl3t64 \
+    libssl3 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
