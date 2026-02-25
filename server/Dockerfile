@@ -21,11 +21,16 @@ RUN mkdir src && \
     echo "pub fn lib() {}" > src/lib.rs
 
 # Build dependencies (this layer will be cached)
-RUN cargo build --release && \
-    rm -rf src target/release/backend-rust target/release/backend-rust.d
+RUN cargo build --release
+
+# Remove dummy artifacts but keep dependencies
+RUN rm -rf src/ target/release/backend-rust* target/release/.fingerprint/backend-rust-* target/release/deps/backend_rust-* target/release/incremental/
 
 # Copy actual source code
 COPY . .
+
+# Force rebuild with touch to update timestamps
+RUN touch src/main.rs src/lib.rs
 
 # Build the application (only app code, deps are cached)
 RUN cargo build --release
