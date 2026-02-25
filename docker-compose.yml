@@ -59,6 +59,12 @@ services:
       dockerfile: Dockerfile
     container_name: dj-arbuzzz-backend
     restart: unless-stopped
+    command: >
+      sh -c "echo '=== Starting backend ===' &&
+             echo 'Binary info:' && ls -lh /app/backend-rust &&
+             echo 'Linked libraries:' && (ldd /app/backend-rust || echo 'ldd not available') &&
+             echo 'Starting application...' &&
+             /app/backend-rust"
     depends_on:
       postgres:
         condition: service_healthy
