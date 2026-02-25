@@ -28,7 +28,8 @@ export default defineNuxtConfig({
 	css: ['~/assets/main.scss'],
 	runtimeConfig: {
 		public: {
-			apiBase: process.env.PUBLIC_API_BASE,
+			apiBase: '',
+			wsBase: '',
 		},
 	},
 

@@ -4,17 +4,13 @@ export function useRadioWebSocket() {
 	const currentTrack = ref<string | null>(null);
 	const playlist = ref<PlaylistData['items']>([]);
 	const isConnected = ref(false);
+	const config = useRuntimeConfig();
 
 	let ws: WebSocket | null = null;
 	let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const connect = () => {
-		// WebSocket подключается через nginx, используем относительный URL
-		// В production: wss://djarbuzzz-music.ru/ws
-		// В development: ws://localhost/ws или http://localhost:3000 (если есть dev-сервер)
-		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-		const wsUrl = `${protocol}//${window.location.host}/ws`;
-
+		const wsUrl = config.public.wsBase;
 		console.log('[WebSocket] Connecting to:', wsUrl);
 
 		try {
