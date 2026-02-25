@@ -9,14 +9,13 @@ export function useRadioWebSocket() {
 	let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const connect = () => {
-		const config = useRuntimeConfig();
-		const apiBase = config.public.apiBase as string;
+		// WebSocket подключается через nginx, используем относительный URL
+		// В production: wss://djarbuzzz-music.ru/ws
+		// В development: ws://localhost/ws или http://localhost:3000 (если есть dev-сервер)
+		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+		const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-		// Преобразуем HTTP URL в WebSocket URL
-		const wsUrl = apiBase
-			.replace('http://', 'ws://')
-			.replace('https://', 'wss://')
-			+ '/ws/ws';
+		console.log('[WebSocket] Connecting to:', wsUrl);
 
 		try {
 			ws = new WebSocket(wsUrl);
