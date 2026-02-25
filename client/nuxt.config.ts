@@ -31,6 +31,17 @@ export default defineNuxtConfig({
 			apiBase: process.env.PUBLIC_API_BASE,
 		},
 	},
+
+	// Proxy для WebSocket в режиме разработки
+	nitro: {
+		devProxy: {
+			'/ws': {
+				target: 'http://localhost:8080/api/v1/ws/ws',
+				ws: true,
+			},
+		},
+	},
+
 	compatibilityDate: '2025-07-15',
 
 	vite: {
