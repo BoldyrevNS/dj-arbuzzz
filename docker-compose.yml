@@ -121,6 +121,7 @@ services:
       NUXT_PUBLIC_WS_BASE: ${NUXT_PUBLIC_WS_BASE:-wss://djarbuzzz-music.ru/ws}
       NUXT_API_SECRET: ${NUXT_API_SECRET:-your-nuxt-secret}
       NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD:-change-this-to-at-least-32-characters-long-secret}
+      NUXT_PUBLIC_WS_DFPWM: ${NUXT_PUBLIC_WS_DFPWM:-wss://djarbuzzz-music.ru/ws/stream-dfpwm}
       NODE_ENV: production
     networks:
       - app-network

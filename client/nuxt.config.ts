@@ -30,6 +30,7 @@ export default defineNuxtConfig({
 		public: {
 			apiBase: '',
 			wsBase: '',
+			wsDfpwm: '',
 		},
 	},
 
