@@ -20,6 +20,7 @@ const searchedTracks = ref<Array<{ name: string; owner_id: number; song_id: numb
 const searchFormLoading = ref(false);
 
 const { currentTrack, playlist } = useRadioWebSocket();
+const { connect } = useDfpwmWebSocket();
 
 async function togglePlay() {
 	if (isPlaying.value) {
@@ -86,6 +87,9 @@ const searchFormSchema = toTypedSchema(z.object({
 
 <template>
 	<div class="layout">
+		<button @click="connect">
+			Connect dfpwm
+		</button>
 		<div class="items">
 			<BasicForm header="Плеер">
 				<div
