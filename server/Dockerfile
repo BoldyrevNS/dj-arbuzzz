@@ -36,6 +36,7 @@ FROM debian:trixie-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libpq5 \
+    libssl3t64 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
