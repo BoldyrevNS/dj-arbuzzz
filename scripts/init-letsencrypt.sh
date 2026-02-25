@@ -140,7 +140,7 @@ fi
 
 # Test with curl from inside container
 echo "### Testing HTTP endpoint from inside container..."
-if docker-compose exec -T nginx wget -q -O- http://localhost/.well-known/acme-challenge/test 2>&1; then
+if docker-compose exec -T nginx wget -q -O- http://127.0.0.1/.well-known/acme-challenge/test 2>&1; then
     echo "✓ Wget succeeded"
 else
     echo "✗ Wget failed"
@@ -154,18 +154,18 @@ echo ""
 
 # Check nginx access logs
 echo "### Testing actual request..."
-docker-compose exec -T nginx sh -c 'wget -O- http://localhost/.well-known/acme-challenge/test 2>&1' || true
+docker-compose exec -T nginx sh -c 'wget -O- http://127.0.0.1/.well-known/acme-challenge/test 2>&1' || true
 echo ""
 
 # Final check
-if docker-compose exec -T nginx wget -q -O- http://localhost/.well-known/acme-challenge/test 2>/dev/null | grep -q "test"; then
+if docker-compose exec -T nginx wget -q -O- http://127.0.0.1/.well-known/acme-challenge/test 2>/dev/null | grep -q "test"; then
     echo "✓ Nginx is serving challenge files correctly"
 else
     echo "✗ Challenge file verification failed"
     echo ""
     echo "Debug information:"
-    echo "- Testing localhost:80 from inside container..."
-    docker-compose exec -T nginx wget -O- http://localhost/.well-known/acme-challenge/test 2>&1 || true
+    echo "- Testing 127.0.0.1:80 from inside container..."
+    docker-compose exec -T nginx wget -O- http://127.0.0.1/.well-known/acme-challenge/test 2>&1 || true
     echo ""
     echo "- Nginx processes:"
     docker-compose exec nginx ps aux | grep nginx
