@@ -57,6 +57,8 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
     container_name: dj-arbuzzz-backend
     restart: unless-stopped
     command: >

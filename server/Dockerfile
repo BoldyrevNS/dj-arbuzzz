@@ -12,27 +12,10 @@ RUN apt-get update && apt-get install -y \
 # Create app directory
 WORKDIR /app
 
-# Copy manifests first to cache dependencies
-COPY Cargo.toml Cargo.lock* ./
-
-# Create dummy source to build dependencies
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "pub fn lib() {}" > src/lib.rs
-
-# Build dependencies (this layer will be cached)
-RUN cargo build --release
-
-# Remove dummy artifacts but keep dependencies
-RUN rm -rf src/ target/release/backend-rust* target/release/.fingerprint/backend-rust-* target/release/deps/backend_rust-* target/release/incremental/
-
-# Copy actual source code
+# Copy all source code
 COPY . .
 
-# Force rebuild with touch to update timestamps
-RUN touch src/main.rs src/lib.rs
-
-# Build the application (only app code, deps are cached)
+# Build the application for the target architecture
 RUN cargo build --release
 
 # Runtime stage
