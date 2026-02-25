@@ -32,6 +32,8 @@ export default defineNuxtConfig({
 		},
 	},
 
+	compatibilityDate: '2025-07-15',
+
 	// Proxy для WebSocket в режиме разработки
 	nitro: {
 		devProxy: {
@@ -41,8 +43,6 @@ export default defineNuxtConfig({
 			},
 		},
 	},
-
-	compatibilityDate: '2025-07-15',
 
 	vite: {
 		css: {
