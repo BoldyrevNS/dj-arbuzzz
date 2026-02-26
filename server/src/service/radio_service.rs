@@ -419,24 +419,108 @@ impl RadioService {
                     mono_samples
                 };
 
-                // Нормализация громкости для лучшего использования динамического диапазона
-                let max_amplitude = resampled.iter().map(|&s| s.abs()).max().unwrap_or(1) as f32;
+                // Enhanced audio processing for DFPWM
+                // 1. Apply high-quality lowpass filter (20kHz cutoff) to prevent aliasing
+                use biquad::*;
 
-                let normalization_factor = if max_amplitude > 16384.0 {
-                    // Если сигнал слишком громкий, немного уменьшаем
-                    16384.0 / max_amplitude
-                } else if max_amplitude < 8192.0 && max_amplitude > 0.0 {
-                    // Если слишком тихий, немного увеличиваем (но не более чем в 2 раза)
-                    (16384.0 / max_amplitude).min(2.0)
+                let fs = 48000.0; // sampling frequency
+                let f0 = 18000.0; // cutoff at 18kHz (leaves margin before Nyquist)
+
+                // Create Butterworth lowpass filter (2nd order for smooth rolloff)
+                let coeffs = Coefficients::<f32>::from_params(
+                    Type::LowPass,
+                    fs.hz(),
+                    f0.hz(),
+                    Q_BUTTERWORTH_F32,
+                )
+                .unwrap();
+
+                let mut biquad1 = DirectForm2Transposed::<f32>::new(coeffs);
+                let mut biquad2 = DirectForm2Transposed::<f32>::new(coeffs); // 2 stages = 4th order
+
+                let mut filtered: Vec<i16> = Vec::with_capacity(resampled.len());
+                for &sample in &resampled {
+                    let s = sample as f32;
+                    let s1 = biquad1.run(s);
+                    let s2 = biquad2.run(s1);
+                    filtered.push(s2.clamp(-32768.0, 32767.0) as i16);
+                }
+
+                // 2. Calculate RMS for better dynamic range analysis
+                let rms: f32 = {
+                    let sum_squares: f64 = filtered.iter().map(|&s| (s as f64).powi(2)).sum();
+                    ((sum_squares / filtered.len() as f64).sqrt()) as f32
+                };
+
+                // 3. Dynamic compression to fit DFPWM's limited dynamic range
+                // Target RMS around -18dBFS (about 8192 for 16-bit)
+                let target_rms = 8192.0;
+                let rms_gain = if rms > 100.0 { target_rms / rms } else { 1.0 };
+
+                // Apply soft-knee compression for peaks
+                let compressed: Vec<f32> = filtered
+                    .iter()
+                    .map(|&sample| {
+                        let s = sample as f32 * rms_gain;
+
+                        // Soft-knee compressor
+                        let threshold = 20000.0;
+                        let ratio = 3.0; // 3:1 compression
+
+                        if s.abs() > threshold {
+                            let excess = s.abs() - threshold;
+                            let compressed_excess = excess / ratio;
+                            let result = threshold + compressed_excess;
+                            result * s.signum()
+                        } else {
+                            s
+                        }
+                    })
+                    .collect();
+
+                // 4. Peak limiting - ensure we don't clip
+                let final_peak = compressed
+                    .iter()
+                    .map(|&s| s.abs())
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap_or(1.0);
+
+                let limiter_gain = if final_peak > 28000.0 {
+                    28000.0 / final_peak
                 } else {
                     1.0
                 };
 
-                // Convert to signed 8-bit with proper scaling and dithering
-                for &sample in &resampled {
-                    // Применяем нормализацию и конвертируем i16 -> i8
-                    let normalized = (sample as f32 * normalization_factor) as i32;
-                    let sample_8bit = ((normalized + 128) / 256).clamp(-128, 127) as i8;
+                // 5. Pre-emphasis filter with optimized coefficient
+                // More gentle pre-emphasis (0.7 instead of 0.95) for DFPWM
+                let pre_emphasis_coef = 0.7;
+                let mut prev_sample: f32 = 0.0;
+
+                // 6. Triangular dithering with appropriate amplitude
+                let mut rng_state = 0x12345678u32;
+                let triangular_dither = |state: &mut u32| {
+                    *state = state.wrapping_mul(1103515245).wrapping_add(12345);
+                    let r1 = (((*state) >> 16) & 0xFFFF) as f32 / 65536.0;
+                    *state = state.wrapping_mul(1103515245).wrapping_add(12345);
+                    let r2 = (((*state) >> 16) & 0xFFFF) as f32 / 65536.0;
+                    r1 - r2
+                };
+
+                // Convert to signed 8-bit with all processing
+                for &sample in &compressed {
+                    // Apply limiter
+                    let limited = sample * limiter_gain;
+
+                    // Apply pre-emphasis filter
+                    let emphasized = limited - (prev_sample * pre_emphasis_coef);
+                    prev_sample = limited;
+
+                    // Add triangular dither (reduced to ~0.25 LSB of 8-bit range)
+                    let dither = triangular_dither(&mut rng_state) * 32.0;
+                    let with_dither = emphasized + dither;
+
+                    // Convert to 8-bit
+                    let sample_8bit = (with_dither / 256.0).clamp(-128.0, 127.0) as i8;
                     resampled_buf.push(sample_8bit);
                 }
 
